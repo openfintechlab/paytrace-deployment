@@ -1,0 +1,22 @@
+name: paytrace
+
+services:
+  paytrace-file-ingest:
+    image: openfintechlab/paytrace-file-ingest:latest
+    pull_policy: always
+    env_file:
+      - ../../paytrace-file-ingest-csv/.env
+    environment:
+      OFTL_FWCSV_ROOTDIR: /app/fwcsv
+    volumes:
+      - ../../fwcsv:/app/fwcsv
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
