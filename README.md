@@ -93,7 +93,9 @@ docker compose -f compose/docker-compose.yml restart paytrace-file-ingest
 
 ## Runtime Notes
 
-- The Compose file loads environment variables from `../paytrace-file-ingest-csv/.env` relative to this repository.
+- Pass `--env-file ../paytrace-file-ingest-csv/.env` when running Compose commands from this repository root.
+- The ingest service also loads runtime environment variables from `../paytrace-file-ingest-csv/.env` through `env_file`.
 - `OFTL_FWCSV_ROOTDIR` is overridden to `/app/fwcsv` inside the container.
+- `OFTL_RABITMQ_HOST` is overridden to `paytrace-rabbitmq` inside the ingest container.
 - The local workspace `../fwcsv` is mounted to `/app/fwcsv`.
 - The service uses `restart: unless-stopped`, so Docker restarts it after failures or daemon restarts unless it was manually stopped.
