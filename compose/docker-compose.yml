@@ -1,6 +1,25 @@
 name: paytrace
 
 services:
+  paytrace-postgres:
+    image: dhi.io/postgres:18-alpine3.22-dev
+    hostname: paytrace-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${OFTL_POSTGRESDB_USERNAME}
+      POSTGRES_PASSWORD: ${OFTL_POSTGRESDB_PASSWORD}
+      POSTGRES_DB: ${OFTL_POSTGRESDB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   paytrace-rabbitmq:
     image: dhi.io/rabbitmq:4.2
     hostname: paytrace-rabbitmq
@@ -17,17 +36,21 @@ services:
     image: openfintechlab/paytrace-file-ingest:latest
     pull_policy: always
     env_file:
-      - ../../paytrace-file-ingest-csv/.env
+      - ${PAYTRACE_ENV_FILE:?Set PAYTRACE_ENV_FILE before running docker compose}
     environment:
       OFTL_FWCSV_ROOTDIR: /app/fwcsv
       OFTL_RABITMQ_HOST: paytrace-rabbitmq
+      OFTL_POSTGRESDB_HOST: paytrace-postgres
     volumes:
       - ../../fwcsv:/app/fwcsv
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
     depends_on:
-      - paytrace-rabbitmq
+      paytrace-rabbitmq:
+        condition: service_started
+      paytrace-postgres:
+        condition: service_healthy
     security_opt:
       - no-new-privileges:true
     logging:
@@ -35,3 +58,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  postgres_data:

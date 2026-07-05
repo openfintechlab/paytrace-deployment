@@ -2,7 +2,7 @@
 
 `paytrace-deployment` contains deployment scripts and runtime composition files for PayTrace services.
 
-The current Docker Compose setup starts the PayTrace file ingest worker from the Docker Hub image `openfintechlab/paytrace-file-ingest:latest`. The worker watches the shared CSV directory, reads configuration from `paytrace-file-ingest-csv/.env`, publishes payment rows to RabbitMQ, and records processing state in PostgreSQL.
+The current Docker Compose setup starts the PayTrace file ingest worker from the Docker Hub image `openfintechlab/paytrace-file-ingest:latest`. The worker watches the shared CSV directory, reads configuration from `PAYTRACE_ENV_FILE`, publishes payment rows to RabbitMQ, and records processing state in PostgreSQL.
 
 ## Compose Files
 
@@ -23,6 +23,16 @@ The Compose project currently defines this service:
 - Existing `fwcsv/` workspace with the expected ingest folders
 
 If PostgreSQL or RabbitMQ run on the host machine, remember that `localhost` inside the container means the container itself. On Docker Desktop for macOS, use `host.docker.internal` in the service `.env` file when the container must reach host services.
+
+## Environment File
+
+Set the file-ingest environment file before running any Compose command from this project root:
+
+```bash
+export PAYTRACE_ENV_FILE=../../paytrace-file-ingest-csv/.env
+```
+
+Compose uses this value for the `paytrace-file-ingest` service `env_file`. The path is relative to `compose/docker-compose.yml`, not the current shell directory.
 
 ## Validate Configuration
 
@@ -93,8 +103,9 @@ docker compose -f compose/docker-compose.yml restart paytrace-file-ingest
 
 ## Runtime Notes
 
-- Pass `--env-file ../paytrace-file-ingest-csv/.env` when running Compose commands from this repository root.
-- The ingest service also loads runtime environment variables from `../paytrace-file-ingest-csv/.env` through `env_file`.
+- Set `PAYTRACE_ENV_FILE` before running Compose commands. Compose fails fast if this variable is missing.
+- Use `PAYTRACE_ENV_FILE={LOCATION OF .env}/.env` when running Compose commands from this repository root because `env_file` paths are resolved relative to `compose/docker-compose.yml`.
+- The ingest service loads runtime environment variables from `PAYTRACE_ENV_FILE` through `env_file`.
 - `OFTL_FWCSV_ROOTDIR` is overridden to `/app/fwcsv` inside the container.
 - `OFTL_RABITMQ_HOST` is overridden to `paytrace-rabbitmq` inside the ingest container.
 - The local workspace `../fwcsv` is mounted to `/app/fwcsv`.
