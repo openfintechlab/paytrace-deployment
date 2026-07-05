@@ -26,85 +26,94 @@ If PostgreSQL or RabbitMQ run on the host machine, remember that `localhost` ins
 
 ## Environment File
 
-Set the file-ingest environment file before running any Compose command from this project root:
+Set the file-ingest environment file before running any Compose command from this project root.
 
-```bash
-export PAYTRACE_ENV_FILE=../../paytrace-file-ingest-csv/.env
+PowerShell:
+
+```powershell
+$env:PAYTRACE_ENV_FILE=(Resolve-Path ..\paytrace-file-ingest-csv\.env).Path
 ```
 
-Compose uses this value for the `paytrace-file-ingest` service `env_file`. The path is relative to `compose/docker-compose.yml`, not the current shell directory.
+Bash:
+
+```bash
+export PAYTRACE_ENV_FILE="$(realpath ../paytrace-file-ingest-csv/.env)"
+```
+
+Compose uses this value for the `paytrace-file-ingest` service `env_file`. Using an absolute path avoids ambiguity because relative `env_file` paths are resolved from `compose/docker-compose.yml`, not the current shell directory.
 
 ## Validate Configuration
 
 From this project root:
 
-```bash
-docker compose -f compose/docker-compose.yml config --quiet
+```powershell
+docker compose --env-file ..\paytrace-file-ingest-csv\.env -f compose/docker-compose.yml config --quiet
 ```
 
-This validates the Compose file and confirms the referenced environment file can be loaded.
+This validates the Compose file, confirms the referenced environment file can be loaded, and supplies the variables used by Compose interpolation for PostgreSQL and RabbitMQ.
 
 ## Start Services
 
 Start the file ingest worker in the background:
 
-```bash
-docker compose -f compose/docker-compose.yml up -d
+```powershell
+docker compose --env-file ..\paytrace-file-ingest-csv\.env -f compose/docker-compose.yml up -d
 ```
 
 Start or recreate only the ingest worker:
 
-```bash
-docker compose -f compose/docker-compose.yml up -d paytrace-file-ingest
+```powershell
+docker compose --env-file ..\paytrace-file-ingest-csv\.env -f compose/docker-compose.yml up -d paytrace-file-ingest
 ```
 
 Pull the latest image before starting:
 
-```bash
-docker compose -f compose/docker-compose.yml pull paytrace-file-ingest
-docker compose -f compose/docker-compose.yml up -d paytrace-file-ingest
+```powershell
+docker compose --env-file ..\paytrace-file-ingest-csv\.env -f compose/docker-compose.yml pull paytrace-file-ingest
+docker compose --env-file ..\paytrace-file-ingest-csv\.env -f compose/docker-compose.yml up -d paytrace-file-ingest
 ```
 
 ## Check Status And Logs
 
 Show service status:
 
-```bash
-docker compose -f compose/docker-compose.yml ps
+```powershell
+docker compose --env-file ..\paytrace-file-ingest-csv\.env -f compose/docker-compose.yml ps
 ```
 
 Follow worker logs:
 
-```bash
-docker compose -f compose/docker-compose.yml logs -f paytrace-file-ingest
+```powershell
+docker compose --env-file ..\paytrace-file-ingest-csv\.env -f compose/docker-compose.yml logs -f paytrace-file-ingest
 ```
 
 ## Stop Services
 
 Stop the worker without removing containers:
 
-```bash
-docker compose -f compose/docker-compose.yml stop paytrace-file-ingest
+```powershell
+docker compose --env-file ..\paytrace-file-ingest-csv\.env -f compose/docker-compose.yml stop paytrace-file-ingest
 ```
 
 Stop and remove Compose-managed containers and networks:
 
-```bash
-docker compose -f compose/docker-compose.yml down
+```powershell
+docker compose --env-file ..\paytrace-file-ingest-csv\.env -f compose/docker-compose.yml down
 ```
 
 ## Restart Services
 
 Restart the ingest worker:
 
-```bash
-docker compose -f compose/docker-compose.yml restart paytrace-file-ingest
+```powershell
+docker compose --env-file ..\paytrace-file-ingest-csv\.env -f compose/docker-compose.yml restart paytrace-file-ingest
 ```
 
 ## Runtime Notes
 
 - Set `PAYTRACE_ENV_FILE` before running Compose commands. Compose fails fast if this variable is missing.
-- Use `PAYTRACE_ENV_FILE={LOCATION OF .env}/.env` when running Compose commands from this repository root because `env_file` paths are resolved relative to `compose/docker-compose.yml`.
+- Prefer an absolute `PAYTRACE_ENV_FILE` value, for example PowerShell's `(Resolve-Path ..\paytrace-file-ingest-csv\.env).Path`.
+- Pass `--env-file ..\paytrace-file-ingest-csv\.env` so Compose can interpolate PostgreSQL and RabbitMQ settings before it starts containers.
 - The ingest service loads runtime environment variables from `PAYTRACE_ENV_FILE` through `env_file`.
 - `OFTL_FWCSV_ROOTDIR` is overridden to `/app/fwcsv` inside the container.
 - `OFTL_RABITMQ_HOST` is overridden to `paytrace-rabbitmq` inside the ingest container.
