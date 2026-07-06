@@ -12,6 +12,7 @@ services:
       POSTGRES_DB: ${OFTL_POSTGRESDB_NAME}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ../sql:/docker-entrypoint-initdb.d:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
@@ -19,6 +20,25 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+  paytrace-postgres-init:
+    image: dhi.io/postgres:18-alpine3.22-dev
+    depends_on:
+      paytrace-postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: paytrace-postgres
+      PGUSER: ${OFTL_POSTGRESDB_USERNAME}
+      PGPASSWORD: ${OFTL_POSTGRESDB_PASSWORD}
+      PGDATABASE: ${OFTL_POSTGRESDB_NAME}
+    volumes:
+      - ../sql:/docker-entrypoint-initdb.d:ro
+    entrypoint:
+      - sh
+      - -ec
+    command:
+      - psql -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/01_create_paytrace_ingest.sql
+    restart: "no"
 
   paytrace-rabbitmq:
     image: dhi.io/rabbitmq:4.2
@@ -41,6 +61,7 @@ services:
       OFTL_FWCSV_ROOTDIR: /app/fwcsv
       OFTL_RABITMQ_HOST: paytrace-rabbitmq
       OFTL_POSTGRESDB_HOST: paytrace-postgres
+      OFTL_POSTGRESDB_SCHEMA: paytrace_ingest
     volumes:
       - ../../fwcsv:/app/fwcsv
     restart: unless-stopped
@@ -51,6 +72,8 @@ services:
         condition: service_started
       paytrace-postgres:
         condition: service_healthy
+      paytrace-postgres-init:
+        condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
     logging:
