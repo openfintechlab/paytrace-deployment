@@ -87,6 +87,46 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  paytrace-adapter-iso2022:
+    image: openfintechlab/paytrace-adapter-iso2022:latest
+    pull_policy: always
+    env_file:
+      - ${PAYTRACE_ENV_FILE:?Set PAYTRACE_ENV_FILE before running docker compose}
+    ports:
+      - "8081:8081"
+    environment:
+      OFTL_SCA_CONTEXT_ROOT: /sca
+      OFTL_SCA_VERSION: "1"
+      OFTL_SCA_HOST: 0.0.0.0
+      OFTL_SCA_PORT: "8081"
+      OFTL_POSTGRESDB_HOST: paytrace-postgres
+      OFTL_POSTGRESDB_SCHEMA: paytrace_iso2022simulator
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    depends_on:
+      paytrace-postgres:
+        condition: service_healthy
+      paytrace-postgres-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - from urllib.request import urlopen; urlopen('http://127.0.0.1:8081/_healthz', timeout=2).read()
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   paytrace-payment-processor:
     image: openfintechlab/paytrace-payment-processor:latest
     pull_policy: always
@@ -107,6 +147,8 @@ services:
         condition: service_healthy
       paytrace-postgres-init:
         condition: service_completed_successfully
+      paytrace-adapter-iso2022:
+        condition: service_healthy
     security_opt:
       - no-new-privileges:true
     logging:
