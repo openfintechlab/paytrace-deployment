@@ -37,7 +37,12 @@ services:
       - sh
       - -ec
     command:
-      - psql -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/01_create_paytrace_ingest.sql
+      - |
+        for sql in /docker-entrypoint-initdb.d/*.sql; do
+          [ -e "$$sql" ] || { echo "No SQL files found."; exit 0; }
+          echo "Running $$sql"
+          psql -v ON_ERROR_STOP=1 -f "$$sql"
+        done
     restart: "no"
 
   paytrace-rabbitmq:
