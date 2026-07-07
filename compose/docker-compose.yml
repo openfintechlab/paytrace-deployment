@@ -79,6 +79,8 @@ services:
         condition: service_healthy
       paytrace-postgres-init:
         condition: service_completed_successfully
+      paytrace-orchestrator:
+        condition: service_started
     security_opt:
       - no-new-privileges:true
     logging:
@@ -149,6 +151,41 @@ services:
         condition: service_completed_successfully
       paytrace-adapter-iso2022:
         condition: service_healthy
+      paytrace-orchestrator:
+        condition: service_started
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  paytrace-orchestrator:
+    image: openfintechlab/paytrace-orchestrator:latest
+    pull_policy: always
+    env_file:
+      - ${PAYTRACE_ENV_FILE:?Set PAYTRACE_ENV_FILE before running docker compose}
+    environment:
+      OFTL_RABITMQ_HOST: paytrace-rabbitmq
+      OFTL_POSTGRESDB_HOST: paytrace-postgres
+      OFTL_POSTGRESDB_SCHEMA: paytrace_ingest
+      OFTL_FWCSV_RESPONSE_DIR: /app/fwcsv/response
+      OFTL_RABITMQ_SAGA_EXCHANGE: ${OFTL_RABITMQ_SAGA_EXCHANGE:-paytrace.events}
+      OFTL_RABITMQ_SAGA_REQUEST_QUEUE: ${OFTL_RABITMQ_SAGA_REQUEST_QUEUE:-OFTL.SAGA.REQ}
+      OFTL_RABITMQ_SAGA_SUSCRIBED_TO: ${OFTL_RABITMQ_SAGA_SUSCRIBED_TO:-files.csv.loaded,files.csv.row.failed,payment.row.processed}
+    volumes:
+      - ../../fwcsv:/app/fwcsv
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    depends_on:
+      paytrace-rabbitmq:
+        condition: service_started
+      paytrace-postgres:
+        condition: service_healthy
+      paytrace-postgres-init:
+        condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
     logging:
