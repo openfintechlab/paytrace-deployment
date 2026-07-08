@@ -57,6 +57,31 @@ Compose uses this value for the `paytrace-file-ingest` service `env_file`. Using
 
 The same environment file must also be passed through `--env-file` so Compose can interpolate `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `RABBITMQ_DEFAULT_USER`, and `RABBITMQ_DEFAULT_PASS` before creating containers.
 
+## CSV Workspace Directory
+
+By default, Compose mounts `../../fwcsv` into the ingest container as `/app/fwcsv`. Override the host-side directory with `PAYTRACE_FWCSV_HOST_DIR` before running Compose.
+
+PowerShell:
+
+```powershell
+$env:PAYTRACE_FWCSV_HOST_DIR=(Resolve-Path ..\fwcsv).Path
+```
+
+Bash:
+
+```bash
+export PAYTRACE_FWCSV_HOST_DIR="$(realpath ../fwcsv)"
+```
+
+For a different ingest workspace, point the variable at that folder:
+
+```powershell
+$env:PAYTRACE_FWCSV_HOST_DIR="C:\Users\baqai\paytrace-fwcsv-test"
+docker compose --env-file .\config\.env -f .\compose\docker-compose.yml up -d paytrace-file-ingest
+```
+
+`PAYTRACE_FWCSV_HOST_DIR` is read by Docker Compose while it renders the bind mount. Set it in the shell, in the file passed with `--env-file`, or in a Compose project `.env` file. Service-level `env_file` values alone are not enough for volume interpolation.
+
 ## Validate Configuration
 
 From this project root:
@@ -268,5 +293,5 @@ docker compose --env-file ./config/.env -f ./compose/docker-compose.yml restart 
 - `OFTL_POSTGRESDB_SCHEMA` should match the schema created by the SQL script. The included script creates `paytrace_ingest`.
 - `OFTL_FWCSV_ROOTDIR` is overridden to `/app/fwcsv` inside the container.
 - `OFTL_RABITMQ_HOST` is overridden to `paytrace-rabbitmq` inside the ingest container.
-- The local workspace `../fwcsv` is mounted to `/app/fwcsv`.
+- `PAYTRACE_FWCSV_HOST_DIR` controls the host directory mounted to `/app/fwcsv`; when omitted, Compose uses `../../fwcsv` relative to `compose/docker-compose.yml`.
 - The service uses `restart: unless-stopped`, so Docker restarts it after failures or daemon restarts unless it was manually stopped.
