@@ -4,6 +4,7 @@
 # - Pass the deployment env file with `docker compose --env-file ...`.
 # - Set PAYTRACE_ENV_FILE to the env file path used by application containers.
 # - Optionally set PAYTRACE_FWCSV_HOST_DIR to override the host CSV workspace.
+# - Optionally set PAYTRACE_DOCKER_PLATFORM when pulling amd64-only image tags.
 name: paytrace
 
 services:
@@ -76,6 +77,7 @@ services:
   # payment request messages plus file lifecycle events to RabbitMQ.
   paytrace-file-ingest:
     image: openfintechlab/paytrace-file-ingest:latest
+    platform: ${PAYTRACE_DOCKER_PLATFORM:-linux/amd64}
     pull_policy: always
     env_file:
       - ${PAYTRACE_ENV_FILE:?Set PAYTRACE_ENV_FILE before running docker compose}
@@ -113,6 +115,7 @@ services:
   # ISO 20022-style payment status responses.
   paytrace-adapter-iso2022:
     image: openfintechlab/paytrace-adapter-iso2022:latest
+    platform: ${PAYTRACE_DOCKER_PLATFORM:-linux/amd64}
     pull_policy: always
     env_file:
       - ${PAYTRACE_ENV_FILE:?Set PAYTRACE_ENV_FILE before running docker compose}
@@ -156,6 +159,7 @@ services:
   # row dispatch status, and publishes row-processed saga events.
   paytrace-payment-processor:
     image: openfintechlab/paytrace-payment-processor:latest
+    platform: ${PAYTRACE_DOCKER_PLATFORM:-linux/amd64}
     pull_policy: always
     env_file:
       - ${PAYTRACE_ENV_FILE:?Set PAYTRACE_ENV_FILE before running docker compose}
@@ -191,6 +195,7 @@ services:
   # writes completed response CSVs under /app/fwcsv/response.
   paytrace-orchestrator:
     image: openfintechlab/paytrace-orchestrator:latest
+    platform: ${PAYTRACE_DOCKER_PLATFORM:-linux/amd64}
     pull_policy: always
     env_file:
       - ${PAYTRACE_ENV_FILE:?Set PAYTRACE_ENV_FILE before running docker compose}
