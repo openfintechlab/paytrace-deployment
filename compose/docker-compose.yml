@@ -1,0 +1,227 @@
+# PayTrace local runtime composition.
+#
+# Required at render time:
+# - Pass the deployment env file with `docker compose --env-file ...`.
+# - Set PAYTRACE_ENV_FILE to the env file path used by application containers.
+# - Optionally set PAYTRACE_FWCSV_HOST_DIR to override the host CSV workspace.
+name: paytrace
+
+services:
+  # PostgreSQL database for PayTrace runtime state.
+  # Exposes 5432 on the host and stores data in the postgres_data volume.
+  # SQL files are mounted for first-run image initialization and explicit init.
+  paytrace-postgres:
+    image: dhi.io/postgres:18-alpine3.22-dev
+    hostname: paytrace-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${OFTL_POSTGRESDB_USERNAME}
+      POSTGRES_PASSWORD: ${OFTL_POSTGRESDB_PASSWORD}
+      POSTGRES_DB: ${OFTL_POSTGRESDB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../sql:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # One-shot database initializer.
+  # Waits for PostgreSQL health, then runs every mounted *.sql file in order.
+  # Downstream services depend on successful completion before starting.
+  paytrace-postgres-init:
+    image: dhi.io/postgres:18-alpine3.22-dev
+    depends_on:
+      paytrace-postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: paytrace-postgres
+      PGUSER: ${OFTL_POSTGRESDB_USERNAME}
+      PGPASSWORD: ${OFTL_POSTGRESDB_PASSWORD}
+      PGDATABASE: ${OFTL_POSTGRESDB_NAME}
+    volumes:
+      - ../sql:/docker-entrypoint-initdb.d:ro
+    entrypoint:
+      - sh
+      - -ec
+    command:
+      - |
+        for sql in /docker-entrypoint-initdb.d/*.sql; do
+          [ -e "$$sql" ] || { echo "No SQL files found."; exit 0; }
+          echo "Running $$sql"
+          psql -v ON_ERROR_STOP=1 -f "$$sql"
+        done
+    restart: "no"
+
+  # RabbitMQ broker for payment requests and PayTrace saga events.
+  # Exposes AMQP on 5672 and management UI on 15672.
+  paytrace-rabbitmq:
+    image: dhi.io/rabbitmq:4.2
+    hostname: paytrace-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${OFTL_RABITMQ_USERNAME}
+      RABBITMQ_DEFAULT_PASS: ${OFTL_RABITMQ_PASSWORD_SECRET}
+    volumes:
+      - ./enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+
+  # CSV ingest worker.
+  # Watches /app/fwcsv, records ingest state in PostgreSQL, and publishes
+  # payment request messages plus file lifecycle events to RabbitMQ.
+  paytrace-file-ingest:
+    image: openfintechlab/paytrace-file-ingest:latest
+    pull_policy: always
+    env_file:
+      - ${PAYTRACE_ENV_FILE:?Set PAYTRACE_ENV_FILE before running docker compose}
+    environment:
+      OFTL_FWCSV_ROOTDIR: /app/fwcsv
+      OFTL_RABITMQ_HOST: paytrace-rabbitmq
+      OFTL_POSTGRESDB_HOST: paytrace-postgres
+      OFTL_POSTGRESDB_SCHEMA: paytrace_ingest
+    volumes:
+      - type: bind
+        source: ${PAYTRACE_FWCSV_HOST_DIR:-../../fwcsv}
+        target: /app/fwcsv
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    depends_on:
+      paytrace-rabbitmq:
+        condition: service_started
+      paytrace-postgres:
+        condition: service_healthy
+      paytrace-postgres-init:
+        condition: service_completed_successfully
+      paytrace-orchestrator:
+        condition: service_started
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ISO 20022 adapter API.
+  # Accepts pain.001 requests, persists simulator metadata, and returns
+  # ISO 20022-style payment status responses.
+  paytrace-adapter-iso2022:
+    image: openfintechlab/paytrace-adapter-iso2022:latest
+    pull_policy: always
+    env_file:
+      - ${PAYTRACE_ENV_FILE:?Set PAYTRACE_ENV_FILE before running docker compose}
+    ports:
+      - "8081:8081"
+    environment:
+      OFTL_SCA_CONTEXT_ROOT: /adapter/iso20022/
+      OFTL_SCA_VERSION: "1"
+      OFTL_SCA_HOST: 0.0.0.0
+      OFTL_SCA_PORT: "8081"
+      OFTL_POSTGRESDB_HOST: paytrace-postgres
+      OFTL_POSTGRESDB_SCHEMA: paytrace_iso2022simulator
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    depends_on:
+      paytrace-postgres:
+        condition: service_healthy
+      paytrace-postgres-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - from urllib.request import urlopen; urlopen('http://127.0.0.1:8081/_healthz', timeout=2).read()
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Payment processor worker.
+  # Consumes payment request queues, calls the ISO 20022 adapter, updates
+  # row dispatch status, and publishes row-processed saga events.
+  paytrace-payment-processor:
+    image: openfintechlab/paytrace-payment-processor:latest
+    pull_policy: always
+    env_file:
+      - ${PAYTRACE_ENV_FILE:?Set PAYTRACE_ENV_FILE before running docker compose}
+    environment:
+      OFTL_RABITMQ_HOST: paytrace-rabbitmq
+      OFTL_POSTGRESDB_HOST: paytrace-postgres
+      OFTL_POSTGRESDB_SCHEMA: paytrace_ingest
+      OFTL_HTTPURL_ISO20022ADAP: ${OFTL_HTTPURL_ISO20022ADAP:-http://paytrace-adapter-iso2022:8081/adapter/iso20022/v1/}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    depends_on:
+      paytrace-rabbitmq:
+        condition: service_started
+      paytrace-postgres:
+        condition: service_healthy
+      paytrace-postgres-init:
+        condition: service_completed_successfully
+      paytrace-adapter-iso2022:
+        condition: service_healthy
+      paytrace-orchestrator:
+        condition: service_started
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Saga orchestrator worker.
+  # Subscribes to PayTrace event topics, checks file completion state, and
+  # writes completed response CSVs under /app/fwcsv/response.
+  paytrace-orchestrator:
+    image: openfintechlab/paytrace-orchestrator:latest
+    pull_policy: always
+    env_file:
+      - ${PAYTRACE_ENV_FILE:?Set PAYTRACE_ENV_FILE before running docker compose}
+    environment:
+      OFTL_RABITMQ_HOST: paytrace-rabbitmq
+      OFTL_POSTGRESDB_HOST: paytrace-postgres
+      OFTL_POSTGRESDB_SCHEMA: paytrace_ingest
+      OFTL_FWCSV_RESPONSE_DIR: /app/fwcsv/response
+      OFTL_RABITMQ_SAGA_EXCHANGE: ${OFTL_RABITMQ_SAGA_EXCHANGE:-paytrace.events}
+      OFTL_RABITMQ_SAGA_REQUEST_QUEUE: ${OFTL_RABITMQ_SAGA_REQUEST_QUEUE:-OFTL.SAGA.REQ}
+      OFTL_RABITMQ_SAGA_SUSCRIBED_TO: ${OFTL_RABITMQ_SAGA_SUSCRIBED_TO:-files.csv.loaded,files.csv.row.failed,payment.row.processed}
+    volumes:
+      - ../../fwcsv:/app/fwcsv
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    depends_on:
+      paytrace-rabbitmq:
+        condition: service_started
+      paytrace-postgres:
+        condition: service_healthy
+      paytrace-postgres-init:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  # Persistent PostgreSQL data volume.
+  postgres_data:

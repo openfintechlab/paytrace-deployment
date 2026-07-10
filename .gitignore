@@ -1,0 +1,50 @@
+# Local environment and secrets
+.env
+.env.*
+compose/.env
+compose/.env.*
+!.env.example
+!*.env.example
+!compose/*.env.example
+
+# Docker Compose local state and generated artifacts
+compose/.docker/
+compose/data/
+compose/logs/
+compose/tmp/
+compose/postgres_data/
+compose/rabbitmq_data/
+compose/pgdata/
+compose/rabbitmq/
+
+# Runtime data mounted by local deployments
+fwcsv/
+postgres_data/
+rabbitmq_data/
+data/
+logs/
+tmp/
+
+# Python and test caches that may appear during deployment checks
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Editor, OS, and local tooling files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs and local archives
+*.log
+*.pid
+*.tar
+*.tar.gz
+*.zip
